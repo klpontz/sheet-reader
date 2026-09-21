@@ -578,7 +578,18 @@ function readFile(file) {
 const STORAGE_KEY = 'sheet-reader:v1';
 const STORAGE_CAP = 4 * 1024 * 1024;
 
-function save(state, store = localStorage) {
+function defaultStorage() {
+  try {
+    return localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function save(state, store) {
+  const target = store ?? defaultStorage();
+  if (!target) return false;
+
   let payload;
   try {
     payload = JSON.stringify(state);
@@ -589,16 +600,19 @@ function save(state, store = localStorage) {
   if (payload.length > STORAGE_CAP) return false;
 
   try {
-    store.setItem(STORAGE_KEY, payload);
+    target.setItem(STORAGE_KEY, payload);
     return true;
   } catch {
     return false;
   }
 }
 
-function restore(store = localStorage) {
+function restore(store) {
+  const target = store ?? defaultStorage();
+  if (!target) return null;
+
   try {
-    const payload = store.getItem(STORAGE_KEY);
+    const payload = target.getItem(STORAGE_KEY);
     if (!payload) return null;
     return JSON.parse(payload);
   } catch {
@@ -606,9 +620,12 @@ function restore(store = localStorage) {
   }
 }
 
-function forget(store = localStorage) {
+function forget(store) {
+  const target = store ?? defaultStorage();
+  if (!target) return;
+
   try {
-    store.removeItem(STORAGE_KEY);
+    target.removeItem(STORAGE_KEY);
   } catch {
     // Nothing to do. A private window has nothing to forget.
   }

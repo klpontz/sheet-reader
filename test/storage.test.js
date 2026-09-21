@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { storage as api } from '../src/main.js';
 
-const { save, restore, STORAGE_CAP } = api;
+const { save, restore, forget, STORAGE_CAP } = api;
 
 function fakeStorage() {
   const map = new Map();
@@ -50,5 +50,39 @@ describe('save and restore', () => {
     const store = fakeStorage();
     store.setItem('sheet-reader:v1', 'not json');
     expect(restore(store)).toBeNull();
+  });
+});
+
+describe('default storage resolution when localStorage itself throws', () => {
+  let original;
+
+  beforeEach(() => {
+    original = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+    Object.defineProperty(globalThis, 'localStorage', {
+      get() {
+        throw new Error('denied');
+      },
+      configurable: true,
+    });
+  });
+
+  afterEach(() => {
+    if (original) {
+      Object.defineProperty(globalThis, 'localStorage', original);
+    } else {
+      delete globalThis.localStorage;
+    }
+  });
+
+  it('save() with no store argument returns false rather than throwing', () => {
+    expect(save({ rows: [], headerRow: 0, filter: '', scroll: 0 })).toBe(false);
+  });
+
+  it('restore() with no store argument returns null rather than throwing', () => {
+    expect(restore()).toBeNull();
+  });
+
+  it('forget() with no store argument does not throw', () => {
+    expect(() => forget()).not.toThrow();
   });
 });
