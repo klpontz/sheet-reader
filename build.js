@@ -9,7 +9,12 @@ const MODULES = [
 ];
 
 function strip(path) {
-  const source = readFileSync(path, 'utf8');
+  let source = readFileSync(path, 'utf8');
+
+  source = source.replace(
+    /\/\*__IMPORTS__\*\/[\s\S]*?\/\*__END_IMPORTS__\*\//,
+    '',
+  );
 
   if (/^\s*import\s/m.test(source)) {
     throw new Error(`${path} uses import, which the bundler cannot inline.`);
