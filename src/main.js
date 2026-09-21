@@ -88,6 +88,7 @@ function adopt(rows) {
   setStatus('');
   populateHeaderChoices();
   draw();
+  persist();
 }
 
 async function loadFromUrl(text) {
@@ -150,6 +151,58 @@ function readFile(file) {
   reader.readAsText(file);
 }
 
+const STORAGE_KEY = 'sheet-reader:v1';
+const STORAGE_CAP = 4 * 1024 * 1024;
+
+function save(state, store = localStorage) {
+  let payload;
+  try {
+    payload = JSON.stringify(state);
+  } catch {
+    return false;
+  }
+
+  if (payload.length > STORAGE_CAP) return false;
+
+  try {
+    store.setItem(STORAGE_KEY, payload);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function restore(store = localStorage) {
+  try {
+    const payload = store.getItem(STORAGE_KEY);
+    if (!payload) return null;
+    return JSON.parse(payload);
+  } catch {
+    return null;
+  }
+}
+
+function forget(store = localStorage) {
+  try {
+    store.removeItem(STORAGE_KEY);
+  } catch {
+    // Nothing to do. A private window has nothing to forget.
+  }
+}
+
+function persist() {
+  const stored = save({
+    rows: STATE.rows,
+    headerRow: STATE.headerRow,
+    filter: el('filter').value,
+    scroll: window.scrollY,
+  });
+
+  if (!stored && STATE.rows.length > 0) {
+    setStatus('This data is too large to remember between visits. It will still read fine now.');
+  }
+}
+
 function start() {
   el('load').addEventListener('click', load);
 
@@ -157,12 +210,16 @@ function start() {
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) load();
   });
 
-  el('filter').addEventListener('input', draw);
+  el('filter').addEventListener('input', () => {
+    draw();
+    persist();
+  });
 
   el('header-row').addEventListener('change', (event) => {
     STATE.headerRow = Number(event.target.value);
     STATE.records = toRecords(STATE.rows, STATE.headerRow);
     draw();
+    persist();
   });
 
   el('clear').addEventListener('click', () => {
@@ -173,6 +230,7 @@ function start() {
     el('filter').value = '';
     el('header-row').textContent = '';
     setStatus('Cleared.');
+    forget();
     draw();
   });
 
@@ -195,8 +253,26 @@ function start() {
     const file = event.dataTransfer?.files?.[0];
     if (file) readFile(file);
   });
+
+  const saved = restore();
+  if (saved && Array.isArray(saved.rows) && saved.rows.length > 0) {
+    STATE.rows = saved.rows;
+    STATE.headerRow = saved.headerRow ?? 0;
+    STATE.records = toRecords(STATE.rows, STATE.headerRow);
+    el('filter').value = saved.filter ?? '';
+    populateHeaderChoices();
+    draw();
+    if (saved.scroll) window.scrollTo(0, saved.scroll);
+  }
+
+  let scrollTimer = null;
+  window.addEventListener('scroll', () => {
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(persist, 400);
+  });
 }
 
 if (typeof document !== 'undefined' && document.getElementById('load')) start();
 
 export const helpers = { classifyInput, looksLikeSignInPage, rowsFromText, messageForFetchFailure };
+export const storage = { save, restore, forget, STORAGE_CAP };
