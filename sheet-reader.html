@@ -540,15 +540,13 @@ function load() {
       setStatus('Paste your cells above, then press Read.', true);
       return;
     case 'url':
-      try {
-        loadFromUrl(text);
-      } catch (error) {
+      loadFromUrl(text).catch((error) => {
         if (error instanceof InvalidSheetUrl) {
           setStatus('That does not look like a Google Sheets link.', true);
         } else {
-          throw error;
+          setStatus('Could not reach Google. Check your connection, or paste the cells instead.', true);
         }
-      }
+      });
       return;
     default:
       adopt(rowsFromText(text));
