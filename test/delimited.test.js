@@ -72,7 +72,7 @@ describe('detectDelimiter', () => {
     expect(detectDelimiter('"a,b,c,d"\tsecond')).toBe('\t');
   });
 
-  it('defaults to comma when neither appears', () => {
-    expect(detectDelimiter('single column')).toBe(',');
+  it('defaults to tab when neither a tab nor a comma appears, so a single column of prose is not split on commas inside the text', () => {
+    expect(detectDelimiter('What did you learn?')).toBe('\t');
   });
 });

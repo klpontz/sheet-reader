@@ -82,5 +82,6 @@ export function detectDelimiter(text) {
     else if (ch === ',') commas += 1;
   }
 
-  return tabs > 0 && tabs >= commas ? '\t' : ',';
+  if (tabs === 0 && commas === 0) return '\t';
+  return tabs >= commas ? '\t' : ',';
 }

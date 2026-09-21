@@ -72,6 +72,8 @@ Out of scope for this version:
 - Editing, writing, or commenting.
 - Multiple tabs at once. A copy or a CSV export covers one tab, and the user
   chooses that tab in Sheets, where they already are.
+- A collapse control for very long values. A value taller than roughly 60
+  lines renders in full rather than collapsing. This is future work.
 
 ## Architecture
 
@@ -217,9 +219,6 @@ the difference between a usable app and a scroll bar.
 - Light and dark mode, following the system setting.
 - Readable on a phone. A 16px side gutter. No horizontal scroll.
 - A record counter. While filtering it reads `12 of 200`.
-- A value taller than roughly 60 lines collapses with an expand control. The
-  Sheets per-cell ceiling is 50,000 characters, so one card can otherwise run
-  for pages.
 
 ## Error handling
 
@@ -231,7 +230,7 @@ Every failure states what happened and what to do next.
 | Pasted text is not tabular | No delimiter found, one column, one row | That does not look like spreadsheet cells. Select the cells in your sheet and copy them. |
 | Unparseable URL | `parseSheetUrl` throws | That does not look like a Google Sheets link. |
 | Sheet not public | Response is HTML and status is 200 | This sheet is not public, so it cannot be read from a link. Copy the cells and paste them instead. |
-| Sheet or tab missing | Status 404, or 400 from gviz | That sheet or tab does not exist. Check the link. |
+| Sheet missing | Status 404 | That sheet or tab does not exist. Check the link. |
 | Network failure | `fetch` rejects | Could not reach Google. Check your connection, or paste the cells instead. |
 | File is not text | Read fails or content is binary | That file is not a CSV. In your sheet use File, then Download, then Comma-separated values. |
 
@@ -240,6 +239,12 @@ request with a sign-in page and a success status. Without the check, the
 parser turns a login page into gibberish cards. A missing sheet is
 distinguished from an unshared one, so the user is not sent to change sharing
 settings that are not the problem.
+
+A bad `gid` cannot be detected. A direct probe on 2026-09-21 showed that a
+`gid` that does not match any tab on a real sheet returns HTTP 200 with the
+first tab's data, not an error. The app has no way to tell that the returned
+data came from the wrong tab, so it silently shows the default tab instead of
+the one the link pointed to. This is accepted for this version.
 
 ## Persistence
 

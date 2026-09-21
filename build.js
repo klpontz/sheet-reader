@@ -1,4 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
+import vm from 'node:vm';
+import { pathToFileURL } from 'node:url';
 
 const MODULES = [
   'src/delimited.js',
@@ -26,20 +28,41 @@ function strip(path) {
   return source.replace(/^export\s+/gm, '').trimEnd();
 }
 
-const bundle = MODULES.map(
-  (path) => `// ---- ${path} ----\n${strip(path)}`,
-).join('\n\n');
-
-const template = readFileSync('src/template.html', 'utf8');
-
-if (!template.includes('/*__BUNDLE__*/')) {
-  throw new Error('src/template.html is missing the /*__BUNDLE__*/ placeholder.');
+export function buildBundle() {
+  return MODULES.map(
+    (path) => `// ---- ${path} ----\n${strip(path)}`,
+  ).join('\n\n');
 }
 
-writeFileSync(
-  'sheet-reader.html',
-  template.replace('/*__BUNDLE__*/', bundle),
-  'utf8',
-);
+export function validateBundle(bundle) {
+  try {
+    // eslint-disable-next-line no-new
+    new vm.Script(bundle);
+  } catch (error) {
+    throw new Error(
+      `Built bundle is not valid JavaScript and would fail silently as a classic script: ${error.message}`,
+    );
+  }
+}
 
-console.log(`Built sheet-reader.html from ${MODULES.length} modules.`);
+function main() {
+  const bundle = buildBundle();
+  validateBundle(bundle);
+
+  const template = readFileSync('src/template.html', 'utf8');
+
+  if (!template.includes('/*__BUNDLE__*/')) {
+    throw new Error('src/template.html is missing the /*__BUNDLE__*/ placeholder.');
+  }
+
+  writeFileSync(
+    'sheet-reader.html',
+    template.replace('/*__BUNDLE__*/', bundle),
+    'utf8',
+  );
+
+  console.log(`Built sheet-reader.html from ${MODULES.length} modules.`);
+}
+
+const isMain = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
+if (isMain) main();

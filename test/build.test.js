@@ -1,6 +1,21 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { validateBundle } from '../build.js';
+
+describe('validateBundle (finding 4)', () => {
+  it('rejects a bundle that is not valid JavaScript, such as a leftover named export', () => {
+    expect(() => validateBundle('export { a as b };')).toThrow();
+  });
+
+  it('rejects a bundle with a duplicate top-level const declaration', () => {
+    expect(() => validateBundle('const ID_IN_URL = 1;\nconst ID_IN_URL = 2;')).toThrow();
+  });
+
+  it('accepts a bundle that parses as valid JavaScript', () => {
+    expect(() => validateBundle('const a = 1;\nfunction b() { return a; }')).not.toThrow();
+  });
+});
 
 describe('build', () => {
   let html;
