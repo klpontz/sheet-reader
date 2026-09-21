@@ -1,4 +1,5 @@
 export const RENDER_CAP = 2000;
+export const SHORT_VALUE_LIMIT = 32;
 
 const URL_PATTERN = /https?:\/\/[^\s<>"']+/g;
 const TRAILING_PUNCTUATION = /[.,;:!?)\]}]+$/;
@@ -43,6 +44,40 @@ function renderValue(value, doc) {
   return wrapper;
 }
 
+function renderField(field, doc) {
+  const group = doc.createElement('div');
+  group.className = 'field';
+
+  const label = doc.createElement('div');
+  label.className = 'label';
+  label.textContent = field.label;
+  group.appendChild(label);
+
+  group.appendChild(renderValue(field.value, doc));
+  return group;
+}
+
+// A short, single-line value is metadata — an id, a timestamp, a row number.
+// Runs of them pair up into a grid so they stop burying the prose underneath.
+function isShort(field) {
+  return !field.value.includes('\n') && field.value.length <= SHORT_VALUE_LIMIT;
+}
+
+function appendRun(card, run, doc) {
+  if (run.length === 0) return;
+
+  // One field on its own reads better full width than alone in a grid cell.
+  if (run.length === 1) {
+    card.appendChild(renderField(run[0], doc));
+    return;
+  }
+
+  const block = doc.createElement('div');
+  block.className = 'compact';
+  run.forEach((field) => block.appendChild(renderField(field, doc)));
+  card.appendChild(block);
+}
+
 function renderCard(record, total, doc) {
   const card = doc.createElement('article');
   card.className = 'card';
@@ -52,18 +87,19 @@ function renderCard(record, total, doc) {
   position.textContent = `Response ${record.index} of ${total}`;
   card.appendChild(position);
 
+  let run = [];
+
   record.fields.forEach((field) => {
-    const group = doc.createElement('div');
-    group.className = 'field';
-
-    const label = doc.createElement('div');
-    label.className = 'label';
-    label.textContent = field.label;
-    group.appendChild(label);
-
-    group.appendChild(renderValue(field.value, doc));
-    card.appendChild(group);
+    if (isShort(field)) {
+      run.push(field);
+      return;
+    }
+    appendRun(card, run, doc);
+    run = [];
+    card.appendChild(renderField(field, doc));
   });
+
+  appendRun(card, run, doc);
 
   return card;
 }

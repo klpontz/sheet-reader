@@ -19,8 +19,8 @@
     --bg: #17171a;
     --fg: #e8e6e1;
     --muted: #97938c;
-    --rule: #2e2e33;
-    --card: #1e1e22;
+    --rule: #34343d;
+    --card: #212128;
     --accent: #8fc3a8;
   }
 }
@@ -84,16 +84,36 @@ input[type="search"] { flex: 1 1 12rem; }
 @media (prefers-color-scheme: dark) { #status.error { color: #f2b8b5; } }
 #count { color: var(--muted); font-size: 0.85rem; letter-spacing: 0.06em; text-transform: uppercase; }
 .reading { padding-top: 1.5rem; }
-.card { border-top: 1px solid var(--rule); padding: 2rem 0; }
+.card {
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  padding: 1.75rem;
+  margin-bottom: 2.25rem;
+}
 .card-index {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.75rem;
-  letter-spacing: 0.08em;
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: 1.25rem;
+  color: var(--accent);
+  margin: -1.75rem -1.75rem 1.5rem;
+  padding: 0.6rem 1.75rem;
+  border-bottom: 1px solid var(--rule);
+  border-radius: 10px 10px 0 0;
 }
-.field { margin-bottom: 1.5rem; }
+.field { margin-bottom: 1.25rem; min-width: 0; }
+.field:last-child { margin-bottom: 0; }
+.compact {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0 1.5rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--rule);
+}
+.compact:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
+.compact .field { margin-bottom: 1.25rem; }
 .label {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.7rem;
@@ -101,8 +121,9 @@ input[type="search"] { flex: 1 1 12rem; }
   text-transform: uppercase;
   color: var(--muted);
   margin-bottom: 0.35rem;
+  overflow-wrap: anywhere;
 }
-.value { font-size: 1.08rem; }
+.value { font-size: 1.08rem; overflow-wrap: anywhere; }
 .value p { margin: 0 0 0.85rem; }
 .value p:last-child { margin-bottom: 0; }
 .value a { color: var(--accent); }
@@ -332,6 +353,7 @@ function filterRecords(records, query) {
 
 // ---- src/render.js ----
 const RENDER_CAP = 2000;
+const SHORT_VALUE_LIMIT = 32;
 
 const URL_PATTERN = /https?:\/\/[^\s<>"']+/g;
 const TRAILING_PUNCTUATION = /[.,;:!?)\]}]+$/;
@@ -376,6 +398,40 @@ function renderValue(value, doc) {
   return wrapper;
 }
 
+function renderField(field, doc) {
+  const group = doc.createElement('div');
+  group.className = 'field';
+
+  const label = doc.createElement('div');
+  label.className = 'label';
+  label.textContent = field.label;
+  group.appendChild(label);
+
+  group.appendChild(renderValue(field.value, doc));
+  return group;
+}
+
+// A short, single-line value is metadata — an id, a timestamp, a row number.
+// Runs of them pair up into a grid so they stop burying the prose underneath.
+function isShort(field) {
+  return !field.value.includes('\n') && field.value.length <= SHORT_VALUE_LIMIT;
+}
+
+function appendRun(card, run, doc) {
+  if (run.length === 0) return;
+
+  // One field on its own reads better full width than alone in a grid cell.
+  if (run.length === 1) {
+    card.appendChild(renderField(run[0], doc));
+    return;
+  }
+
+  const block = doc.createElement('div');
+  block.className = 'compact';
+  run.forEach((field) => block.appendChild(renderField(field, doc)));
+  card.appendChild(block);
+}
+
 function renderCard(record, total, doc) {
   const card = doc.createElement('article');
   card.className = 'card';
@@ -385,18 +441,19 @@ function renderCard(record, total, doc) {
   position.textContent = `Response ${record.index} of ${total}`;
   card.appendChild(position);
 
+  let run = [];
+
   record.fields.forEach((field) => {
-    const group = doc.createElement('div');
-    group.className = 'field';
-
-    const label = doc.createElement('div');
-    label.className = 'label';
-    label.textContent = field.label;
-    group.appendChild(label);
-
-    group.appendChild(renderValue(field.value, doc));
-    card.appendChild(group);
+    if (isShort(field)) {
+      run.push(field);
+      return;
+    }
+    appendRun(card, run, doc);
+    run = [];
+    card.appendChild(renderField(field, doc));
   });
+
+  appendRun(card, run, doc);
 
   return card;
 }

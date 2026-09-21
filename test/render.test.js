@@ -158,3 +158,89 @@ describe('renderCards', () => {
     expect(container.querySelectorAll('.card')).toHaveLength(0);
   });
 });
+
+describe('compact grouping of short fields', () => {
+  let container;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+  });
+
+  const short = (label, value) => ({ label, value });
+  const longValue = 'x'.repeat(200);
+
+  it('groups consecutive short fields into one compact block', () => {
+    renderCards(
+      [{ index: 1, fields: [short('A', '78'), short('B', '1a08b155'), short('C', '9/10/2026')] }],
+      container,
+      1,
+    );
+    const groups = container.querySelectorAll('.compact');
+    expect(groups).toHaveLength(1);
+    expect(groups[0].querySelectorAll('.field')).toHaveLength(3);
+  });
+
+  it('leaves a long value outside the compact block, at full width', () => {
+    renderCards(
+      [{ index: 1, fields: [short('A', '78'), short('B', '79'), short('Body', longValue)] }],
+      container,
+      1,
+    );
+    expect(container.querySelectorAll('.compact')).toHaveLength(1);
+    expect(container.querySelectorAll('.compact .field')).toHaveLength(2);
+    const full = container.querySelectorAll('.card > .field');
+    expect(full).toHaveLength(1);
+    expect(full[0].querySelector('.label').textContent).toBe('Body');
+  });
+
+  it('treats a multi-line value as long even when it is short', () => {
+    renderCards(
+      [{ index: 1, fields: [short('A', 'one\ntwo')] }],
+      container,
+      1,
+    );
+    expect(container.querySelectorAll('.compact')).toHaveLength(0);
+    expect(container.querySelectorAll('.card > .field')).toHaveLength(1);
+  });
+
+  it('starts a new compact block after a long field', () => {
+    renderCards(
+      [{
+        index: 1,
+        fields: [
+          short('A', '1'), short('B', '2'),
+          short('Body', longValue),
+          short('C', '3'), short('D', '4'),
+        ],
+      }],
+      container,
+      1,
+    );
+    expect(container.querySelectorAll('.compact')).toHaveLength(2);
+  });
+
+  it('does not wrap a lone short field in a compact block', () => {
+    renderCards(
+      [{ index: 1, fields: [short('A', '78')] }],
+      container,
+      1,
+    );
+    expect(container.querySelectorAll('.compact')).toHaveLength(0);
+    expect(container.querySelectorAll('.card > .field')).toHaveLength(1);
+  });
+
+  it('still renders every field exactly once regardless of grouping', () => {
+    renderCards(
+      [{ index: 1, fields: [short('A', '1'), short('B', '2'), short('Body', longValue)] }],
+      container,
+      1,
+    );
+    expect(container.querySelectorAll('.field')).toHaveLength(3);
+  });
+
+  it('renders a value with no line breaks and no horizontal overflow risk', () => {
+    const token = 'a'.repeat(120);
+    renderCards([{ index: 1, fields: [short('ID', token)] }], container, 1);
+    expect(container.querySelector('.value').textContent).toBe(token);
+  });
+});
