@@ -2,6 +2,7 @@
 
 Date: 2026-09-21
 Status: Approved for planning
+Supersedes: the OAuth and Picker design of the same date. See Revision history.
 
 ## Problem
 
@@ -9,166 +10,203 @@ Google Sheets organize data well. They read badly. When a cell holds a
 paragraph, the grid truncates it. Reading a batch of long-form Google Form
 responses in a spreadsheet is slow and unpleasant.
 
+## Goal
+
+The fewest possible steps between "I have a sheet of responses" and "I am
+reading them comfortably." This goal outranks every other consideration in
+this document.
+
+The thing this app competes with is opening the sheet and squinting. That
+costs two steps. Any design that costs more than a few steps loses to
+squinting and should not be built.
+
 ## Solution
 
-A web app that reads a Google Sheet and renders each row as a readable text
-block. One record per card. Typography tuned for reading prose, not for
-scanning numbers.
+One HTML file. Double-click it. Paste your cells into it. Read.
+
+No install. No sign-in. No Google Cloud console. No server. No config file.
+No dependencies. No network request, unless the user pastes a link.
+
+## Step count
+
+First use:
+
+1. Download `sheet-reader.html`.
+2. Double-click it.
+3. In the sheet: select the cells, copy.
+4. Paste into the page.
+5. Read.
+
+Steady state is two steps: copy, paste.
+
+## Privacy
+
+Pasted and dragged data never leaves the machine. The app makes no network
+request on those paths. The sheet's sharing settings never change, so form
+responses containing personal names stay private.
+
+This is a stronger privacy position than an authenticated design, which would
+route the same data through Google's API.
+
+The one exception is the pasted-link path, which fetches from Google. That
+path only works on sheets that are already public, so it exposes nothing that
+was not already exposed. The interface says so plainly.
 
 ## Scope
 
 In scope:
 
-- Read one sheet tab at a time.
-- Render rows as cards.
-- Two ways to supply a sheet: Google Picker, or a pasted link.
-- Run on localhost.
+- Paste cells as delimited text.
+- Drag a downloaded CSV or TSV file onto the page.
+- Paste a Google Sheets link, for sheets that are already public.
+- Render each row as a card.
+- Filter cards by typing.
+- Choose which row holds the headers.
 
 Out of scope for this version:
 
-- Search or filter.
-- Grouping answers by column instead of by row.
+- Reading private sheets over the network. See "Later, not now."
+- Grouping answers by column instead of by row. This is the next thing to
+  build, ahead of everything else. It is a transpose of data the app already
+  holds.
 - Editing, writing, or commenting.
-- Public hosting and OAuth verification. These come later as separate work.
+- Multiple tabs at once. A copy or a CSV export covers one tab, and the user
+  chooses that tab in Sheets, where they already are.
 
 ## Architecture
 
-A static single-page app. No backend. No server-side secrets.
+One built file, `sheet-reader.html`, containing all markup, styles, and
+script. It opens from `file://`.
 
-Three reasons this works:
+The `file://` requirement drives a real constraint: ES module imports are
+blocked from `file://` origins. So the shipped file inlines everything in a
+single classic script tag.
 
-1. The no-auth path uses the Google visualization CSV endpoint. It returns
-   `access-control-allow-origin` matching the request origin. Verified by
-   direct request on 2026-09-21.
-2. The authenticated path uses Google Identity Services. The token client
-   runs in the browser and returns an access token without a backend.
-3. All rendering is client-side.
+Development does not suffer for it. Logic lives in separate ES modules that
+unit tests import directly. A short build script inlines those modules into
+the template to produce the shipped file. The build serves the developer. The
+user never sees it.
 
 ### Files
 
 ```
-index.html          Markup and styles.
-src/main.js         Wiring. Event handlers. No logic worth testing.
-src/sheetUrl.js     parseSheetUrl
-src/csv.js          parseCsv
-src/records.js      toRecords
-src/render.js       renderCards
-src/googleAuth.js   Token client and Picker.
-src/fetchCsv.js     No-auth CSV fetch.
-src/fetchApi.js     Authenticated Sheets API fetch.
-test/*.test.js      Unit tests.
+sheet-reader.html     Built artifact. The thing you double-click. Committed.
+build.js              Inlines src modules into the template.
+src/template.html     Markup and styles, with one placeholder for script.
+src/delimited.js      parseDelimited
+src/sheetUrl.js       parseSheetUrl
+src/records.js        toRecords, filterRecords
+src/render.js         renderCards, linkify
+src/main.js           Wiring and event handlers.
+test/*.test.js        Unit tests.
 ```
+
+`sheet-reader.html` is committed, not generated on demand, so that downloading
+one file from the repo is genuinely all it takes.
 
 ### Data flow
 
-Both ingest paths converge on the same shape before rendering. This keeps the
-reading view ignorant of how the data arrived.
+Three inputs converge on one shape before rendering. The reading view does not
+know or care where the data came from.
 
 ```
-Picker path:   pick file -> fileId -> Sheets API -> string[][] ->
-Paste path:    paste URL -> parseSheetUrl -> CSV endpoint -> parseCsv -> string[][] ->
-
-  -> toRecords -> Record[] -> renderCards -> DOM
+paste cells  ─┐
+drag file    ─┼─> text ─> parseDelimited ─> string[][] ─┐
+              │                                          │
+paste link   ─┴─> parseSheetUrl ─> fetch CSV ─> text ────┘
+                                                         │
+                     string[][] ─> toRecords ─> Record[] ─> renderCards ─> DOM
+                                                    │
+                                          filterRecords (on keystroke)
 ```
 
 `Record` is `{ index: number, fields: Array<{label: string, value: string}> }`.
+
+### Input detection
+
+One text box accepts all three pasted inputs. A URL is trivially
+distinguishable from spreadsheet cells, so this costs no extra interface.
+
+- Input matching a Google Sheets URL, after trimming, takes the link path.
+- Anything else is treated as delimited text.
+- A dropped file is read as text and treated as delimited text.
+
+Delimiter is detected, not assumed. Clipboard content from Google Sheets is
+tab-separated. A downloaded export is comma-separated. The detector counts
+unquoted tabs and unquoted commas in the first line and picks the winner.
+A tie, or neither, means one column.
 
 ## Units
 
 Each unit does one thing. Each is testable on its own.
 
-### parseSheetUrl(input) -> {id, gid}
+### parseDelimited(text, delimiter) -> string[][]
 
-Accepts a full Google Sheets URL or a bare sheet ID.
+An RFC 4180 style parser, parameterized by delimiter.
 
-- Extracts the ID from `/spreadsheets/d/{ID}/`.
-- Extracts `gid` from either `#gid=N` or `?gid=N`.
-- Defaults `gid` to `"0"` when absent.
-- Throws `InvalidSheetUrl` on anything else.
-
-### parseCsv(text) -> string[][]
-
-An RFC 4180 parser. This unit matters more than its size suggests. Paragraph
-answers contain commas, double quotes, and literal newlines inside quoted
-fields. A naive split on commas destroys exactly the data this app exists to
-show.
+This unit carries the real risk. Paragraph answers contain commas, tabs,
+double quotes, and literal newlines inside quoted fields. A naive split
+destroys exactly the data this app exists to show. Google quotes multi-line
+cells on copy, so quoted newlines arrive on the paste path too, not only on
+the file path.
 
 Rules:
 
-- A field wrapped in double quotes may contain commas, newlines, and escaped
-  double quotes written as `""`.
-- Rows end at an unquoted `\n`. A `\r\n` ends a row the same way.
+- A field wrapped in double quotes may contain the delimiter, newlines, and
+  escaped double quotes written as `""`.
+- A row ends at an unquoted `\n`, `\r\n`, or lone `\r`.
 - A trailing newline at end of input does not create an empty final row.
+- Unbalanced quotes at end of input close the field rather than throwing.
 
-### toRecords(rows) -> Record[]
+Google's output is not strictly RFC 4180. Tests use captured real Google
+output, not hand-written RFC examples.
 
-- Row 0 supplies the field labels.
-- Every later row becomes one record.
-- A cell that is empty or whitespace-only is dropped from that record.
-- A record whose cells are all empty is dropped entirely.
-- A row with fewer cells than the header is padded with empty cells.
-- A row with more cells than the header keeps the extras. Each extra takes
-  the label `Column N`, where N is the one-based cell position.
-- A duplicate header label is kept as written. Labels are not made unique.
+### parseSheetUrl(input) -> {id, gid}
+
+- Extracts the ID from `/spreadsheets/d/{ID}/`.
+- Extracts `gid` from `#gid=N` or `?gid=N`. Defaults to `"0"`.
+- Throws `InvalidSheetUrl` on anything else.
+
+### toRecords(rows, headerRowIndex) -> Record[]
+
+- The row at `headerRowIndex` supplies the labels. Default 0.
+- Every later row becomes one record. Rows above are ignored.
+- A cell that is empty or whitespace-only is dropped from its record.
+- A record whose cells are all empty is dropped.
+- A row shorter than the header is padded with empty cells.
+- A row longer than the header keeps the extras.
+- **A blank label whose column holds a value is labeled with its spreadsheet
+  column letter, for example `Column H`.** This rule is not decoration. The
+  gviz endpoint pads every row out to the full grid width, so a six-column
+  sheet can arrive with twenty-two columns and sixteen blank labels. A single
+  note typed off to the side of a sheet lands in one of them.
+- **Duplicate labels are disambiguated by appending the column letter**, for
+  example `Your name (C)`. Google Forms sections routinely repeat identical
+  question text, and two identical labels with different answers are
+  unreadable.
+
+### filterRecords(records, query) -> Record[]
+
+Case-insensitive substring match against every label and value in a record.
+Empty query returns everything. Roughly fifteen lines.
+
+This is not deferred, despite being a feature. At two hundred responses it is
+the difference between a usable app and a scroll bar.
 
 ### renderCards(records, container)
 
 - One card per record.
 - Each field renders a label and a value.
-- The label is small, uppercase, and low contrast.
-- The value is body text.
+- Values are inserted as text nodes, never as HTML.
 - Newlines inside a value become separate paragraphs.
-- Values are inserted as text, never as HTML.
-
-## Ingest paths
-
-### Picker path (primary)
-
-Scope: `https://www.googleapis.com/auth/drive.file`.
-
-This scope grants access only to files the user selects in the Google Picker.
-It is a non-sensitive scope. An app using only this scope can be shared
-publicly without OAuth verification. The app can never read a sheet the user
-did not explicitly choose.
-
-Flow: click "Choose a sheet" -> Google Identity Services issues a token ->
-Picker opens -> user selects a sheet -> app calls the Sheets API for that
-file ID.
-
-The app reads tab names with `spreadsheets.get` and cell values with
-`spreadsheets.values.get`. When a sheet has more than one tab, the app shows a
-tab selector.
-
-### Paste path (fallback)
-
-No authentication. For sheets that are published to the web or set to
-anyone-with-link-can-view.
-
-The app fetches:
-
-```
-https://docs.google.com/spreadsheets/d/{ID}/gviz/tq?tqx=out:csv&gid={GID}
-```
-
-This path exists because it needs no setup at all. It is the fastest way to
-read a sheet that is already shared.
-
-## Error handling
-
-Every failure states what happened and what to do next. No raw stack traces.
-
-| Condition | Detection | Message |
-|---|---|---|
-| Unparseable URL | `parseSheetUrl` throws | That does not look like a Google Sheets link. |
-| Sheet not shared | Response body is HTML, not CSV | This sheet is not shared. Either set it to anyone-with-link-can-view, or use Choose a sheet to sign in. |
-| Sheet has no rows | `rows.length < 2` | This sheet has a header row but no data. |
-| Sheet is empty | `rows.length === 0` | This sheet is empty. |
-| Token expired | API returns 401 | Session expired. Choose a sheet again. |
-| Network failure | `fetch` rejects | Could not reach Google. Check your connection. |
-
-The HTML-not-CSV check is the important one. Google answers an unauthorized
-CSV request with a sign-in page and a 200 status. Without this check the
-parser would happily turn a login page into gibberish cards.
+- Runs matching `https?://` become links, built by appending an anchor element
+  to a text node. Never by assigning `innerHTML`. Form responses are full of
+  portfolio and document links, and dead link text is a real loss.
+- Every value element carries `dir="auto"`, so answers in Arabic or Hebrew
+  align correctly.
+- Above 2,000 records the app renders the first 2,000 and says so. There is no
+  virtualization. Ten thousand rows of twenty fields is several hundred
+  thousand DOM nodes and would hang the tab.
 
 ## Reading view
 
@@ -178,13 +216,43 @@ parser would happily turn a login page into gibberish cards.
 - Cards separated by whitespace and a hairline rule, not heavy borders.
 - Light and dark mode, following the system setting.
 - Readable on a phone. A 16px side gutter. No horizontal scroll.
-- A record counter so the reader knows where they are.
+- A record counter. While filtering it reads `12 of 200`.
+- A value taller than roughly 60 lines collapses with an expand control. The
+  Sheets per-cell ceiling is 50,000 characters, so one card can otherwise run
+  for pages.
+
+## Error handling
+
+Every failure states what happened and what to do next.
+
+| Condition | Detection | Message |
+|---|---|---|
+| Pasted text has one row | `rows.length < 2` after parse | That looks like a header row with no data under it. |
+| Pasted text is not tabular | No delimiter found, one column, one row | That does not look like spreadsheet cells. Select the cells in your sheet and copy them. |
+| Unparseable URL | `parseSheetUrl` throws | That does not look like a Google Sheets link. |
+| Sheet not public | Response is HTML and status is 200 | This sheet is not public, so it cannot be read from a link. Copy the cells and paste them instead. |
+| Sheet or tab missing | Status 404, or 400 from gviz | That sheet or tab does not exist. Check the link. |
+| Network failure | `fetch` rejects | Could not reach Google. Check your connection, or paste the cells instead. |
+| File is not text | Read fails or content is binary | That file is not a CSV. In your sheet use File, then Download, then Comma-separated values. |
+
+The HTML-with-status-200 check matters. Google answers an unauthorized CSV
+request with a sign-in page and a success status. Without the check, the
+parser turns a login page into gibberish cards. A missing sheet is
+distinguished from an unshared one, so the user is not sent to change sharing
+settings that are not the problem.
 
 ## Persistence
 
-`localStorage` holds the last pasted URL and the last selected tab. Every read
-and write is wrapped in `try`/`catch`, because storage throws in private
-windows.
+`localStorage` holds the parsed records, the header row choice, the filter
+query, and the scroll position, so closing and reopening the file resumes
+where the reader left off. Reading two hundred responses is not one sitting.
+
+- A visible "Clear data" control empties it. The interface states that the
+  data is stored in the browser on this machine.
+- If the dataset exceeds roughly 4 MB it is not stored, and the app says so
+  rather than failing silently.
+- Every read and write is wrapped in `try`/`catch`, because storage throws in
+  private windows.
 
 ## Testing
 
@@ -192,47 +260,77 @@ Test-driven. Tests come before implementation.
 
 Unit tested with Vitest, because the pure functions carry the real risk:
 
-- `parseSheetUrl`: edit URLs, `#gid`, `?gid`, bare IDs, garbage input.
-- `parseCsv`: quoted commas, quoted newlines, escaped quotes, `\r\n`,
-  trailing newline, empty fields, a single-column file.
-- `toRecords`: ragged rows, empty cells, all-empty rows, duplicate headers.
+- `parseDelimited`: quoted delimiters, quoted newlines, escaped quotes,
+  `\r\n`, lone `\r`, trailing newline, empty fields, one column, unbalanced
+  quotes, and captured real Google clipboard and export output.
+- `parseSheetUrl`: edit URLs, `#gid`, `?gid`, bare IDs, garbage.
+- `toRecords`: ragged rows, blank labels, duplicate labels, all-empty rows,
+  a header row that is not row 0, gviz width padding.
+- `filterRecords`: case insensitivity, no match, empty query.
+- `linkify`: a bare URL, a URL in a sentence, trailing punctuation, text that
+  contains angle brackets, and text that looks like HTML.
 
 Browser verified, because the reading view cannot be unit tested into
 existence:
 
-- Both ingest paths against a real sheet.
+- Opened from `file://` by double-clicking. This is the primary path and is
+  verified first.
+- All three inputs against a real sheet of long-form responses.
 - Every error condition in the table above.
-- Desktop and phone widths.
-- Light and dark mode.
+- Desktop and phone widths. Light and dark mode.
+- Reload resumes position.
 
 ## Risks
 
-**The main risk is the Picker path.** The design assumes `drive.file` grants
-the Sheets API access to a picker-selected file. Confidence is moderate, not
-high. Google documents per-file access for this scope, but the interaction
-between `drive.file` and the Sheets API specifically must be confirmed.
+**The pasted-link path is the only genuine unknown.** The gviz CSV endpoint is
+undocumented. Its CORS behavior was verified empirically on 2026-09-21 and its
+width padding was observed directly. Its header and type-coercion semantics
+are not documented and may change without notice.
 
-Mitigation: the first implementation step is a throwaway probe that proves the
-call works before any other Picker code is written. If it fails, the fallback
-is the Drive API `files.export` endpoint with `mimeType=text/csv`, which is
-known to work with `drive.file`. That fallback exports only the first tab, so
-multi-tab support would be lost on the Picker path. The paste path is
-unaffected either way.
+This risk is contained by design. The link path is a convenience for sheets
+that are already public. If Google breaks it, paste and drag still work, and
+those are the paths the app is built around.
 
-**Secondary risk:** the CSV endpoint is undocumented. It has been stable for
-many years, but Google could change it. The Picker path does not depend on it.
+There is no risk in the paste and drag paths. They are a file read and a
+string parse.
 
-## Setup required from the user
+## Later, not now
 
-One time, in the Google Cloud console:
+If live reading of private sheets is ever wanted, the answer is **not** to ask
+each user to create a Google Cloud project. That was the previous design and
+it cost twenty-five steps.
 
-1. Create a project.
-2. Enable the Google Sheets API and the Google Picker API.
-3. Configure the OAuth consent screen. External. Testing mode.
-4. Add the user as a test user.
-5. Create an OAuth client ID of type Web application.
-6. Add `http://localhost:8000` as an authorized JavaScript origin.
-7. Create an API key for the Picker.
+The answer is a hosted build at a fixed origin, shipping one pre-registered
+OAuth client ID, using the `drive.file` scope with the Google Picker. The user
+clicks a link, clicks "Choose a sheet", and picks it. Four steps, no setup.
 
-The client ID and API key go in a local config file that is git-ignored.
-Neither is a secret in the usual sense. Both are origin-restricted.
+`drive.file` is a non-sensitive scope, so it avoids OAuth verification review
+and the hundred-user cap. It also grants access only to the file the user
+picked, never the whole account. The hosting, the privacy policy page, the
+published consent screen, and the referrer-restricted API key are all
+one-time costs borne once, by whoever ships it, rather than by every user.
+
+That is a separate piece of work with its own design.
+
+## Revision history
+
+**2026-09-21, superseded design.** The first version of this spec required
+each user to create a Google Cloud project, enable two APIs, configure an
+OAuth consent screen in testing mode, add themselves as a test user, create a
+client ID and an API key, write a local config file, and run a web server on
+localhost. Twenty-five steps to first read, fourteen of them in a cloud
+console. An adversarial review counted them against the stated goal and the
+design failed.
+
+Three specific errors in that version are worth recording so they are not
+repeated:
+
+1. It named `drive.file` with the Sheets API as the main technical risk and
+   budgeted a probe to test it. It is documented behavior. The risk was never
+   real, and the genuinely undocumented endpoint was rated a footnote.
+2. It claimed both credentials were origin-restricted. An API key is not
+   restricted unless a referrer restriction is added, which its setup steps
+   omitted.
+3. It described the properties of a published non-sensitive app while
+   instructing the reader to build a testing-mode one. Testing mode shows an
+   unverified-app warning and expires authorization every seven days.
