@@ -1,0 +1,36 @@
+import { describe, it, expect, beforeAll } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+
+describe('build', () => {
+  let html;
+
+  beforeAll(() => {
+    execFileSync('node', ['build.js'], { cwd: process.cwd() });
+    html = readFileSync('sheet-reader.html', 'utf8');
+  });
+
+  it('inlines the bundle in place of the placeholder', () => {
+    expect(html).not.toContain('__BUNDLE__');
+  });
+
+  it('contains no export statements', () => {
+    expect(html).not.toMatch(/^\s*export\s/m);
+  });
+
+  it('contains no import statements', () => {
+    expect(html).not.toMatch(/^\s*import\s/m);
+  });
+
+  it('includes code from every module', () => {
+    expect(html).toContain('function parseDelimited');
+    expect(html).toContain('function parseSheetUrl');
+    expect(html).toContain('function toRecords');
+    expect(html).toContain('function renderCards');
+  });
+
+  it('references no external resources', () => {
+    expect(html).not.toMatch(/<script[^>]+src=/);
+    expect(html).not.toMatch(/<link[^>]+stylesheet/);
+  });
+});

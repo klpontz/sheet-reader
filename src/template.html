@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sheet Reader</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #fbfaf8;
+  --fg: #1c1b19;
+  --muted: #6b6862;
+  --rule: #e2ded7;
+  --card: #ffffff;
+  --accent: #3a6b52;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17171a;
+    --fg: #e8e6e1;
+    --muted: #97938c;
+    --rule: #2e2e33;
+    --card: #1e1e22;
+    --accent: #8fc3a8;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 0 16px 6rem;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+  line-height: 1.65;
+}
+.wrap { max-width: 42rem; margin: 0 auto; }
+header.site { padding: 2.5rem 0 1.25rem; }
+h1 {
+  font-size: 1.05rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  margin: 0 0 0.75rem;
+}
+.hint { color: var(--muted); font-size: 0.95rem; margin: 0 0 1rem; }
+textarea {
+  width: 100%;
+  min-height: 7rem;
+  padding: 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  resize: vertical;
+}
+textarea:focus-visible, input:focus-visible, button:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0.75rem 0 0;
+}
+button, select, input[type="search"] {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.45rem 0.8rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--fg);
+}
+button { cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+input[type="search"] { flex: 1 1 12rem; }
+#status { margin: 1rem 0 0; color: var(--muted); font-size: 0.95rem; min-height: 1.4em; }
+#status.error { color: #b3261e; }
+@media (prefers-color-scheme: dark) { #status.error { color: #f2b8b5; } }
+#count { color: var(--muted); font-size: 0.85rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.reading { padding-top: 1.5rem; }
+.card { border-top: 1px solid var(--rule); padding: 2rem 0; }
+.card-index {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 1.25rem;
+}
+.field { margin-bottom: 1.5rem; }
+.label {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.35rem;
+}
+.value { font-size: 1.08rem; }
+.value p { margin: 0 0 0.85rem; }
+.value p:last-child { margin-bottom: 0; }
+.value a { color: var(--accent); }
+.empty, .cap-notice { color: var(--muted); font-style: italic; }
+body.dragging { outline: 3px dashed var(--accent); outline-offset: -10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="site">
+    <h1>Sheet Reader</h1>
+    <p class="hint">
+      In your sheet select the cells and copy them, then paste below.
+      You can also drag a downloaded CSV onto this page, or paste a link
+      to a sheet that is already public.
+    </p>
+    <textarea id="input" aria-label="Paste spreadsheet cells or a sheet link"
+      placeholder="Paste cells here"></textarea>
+    <div class="controls">
+      <button id="load" class="primary" type="button">Read</button>
+      <label for="header-row" class="hint" style="margin:0">Header row</label>
+      <select id="header-row" aria-label="Which row holds the headers"></select>
+      <input id="filter" type="search" placeholder="Filter responses" aria-label="Filter responses">
+      <button id="clear" type="button">Clear data</button>
+    </div>
+    <p id="status" role="status"></p>
+    <p id="count"></p>
+  </header>
+  <main id="cards" class="reading"></main>
+</div>
+<script>
+/*__BUNDLE__*/
+</script>
+</body>
+</html>

@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sheet Reader</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #fbfaf8;
+  --fg: #1c1b19;
+  --muted: #6b6862;
+  --rule: #e2ded7;
+  --card: #ffffff;
+  --accent: #3a6b52;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17171a;
+    --fg: #e8e6e1;
+    --muted: #97938c;
+    --rule: #2e2e33;
+    --card: #1e1e22;
+    --accent: #8fc3a8;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 0 16px 6rem;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+  line-height: 1.65;
+}
+.wrap { max-width: 42rem; margin: 0 auto; }
+header.site { padding: 2.5rem 0 1.25rem; }
+h1 {
+  font-size: 1.05rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  margin: 0 0 0.75rem;
+}
+.hint { color: var(--muted); font-size: 0.95rem; margin: 0 0 1rem; }
+textarea {
+  width: 100%;
+  min-height: 7rem;
+  padding: 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  resize: vertical;
+}
+textarea:focus-visible, input:focus-visible, button:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0.75rem 0 0;
+}
+button, select, input[type="search"] {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.45rem 0.8rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--fg);
+}
+button { cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+input[type="search"] { flex: 1 1 12rem; }
+#status { margin: 1rem 0 0; color: var(--muted); font-size: 0.95rem; min-height: 1.4em; }
+#status.error { color: #b3261e; }
+@media (prefers-color-scheme: dark) { #status.error { color: #f2b8b5; } }
+#count { color: var(--muted); font-size: 0.85rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.reading { padding-top: 1.5rem; }
+.card { border-top: 1px solid var(--rule); padding: 2rem 0; }
+.card-index {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 1.25rem;
+}
+.field { margin-bottom: 1.5rem; }
+.label {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.35rem;
+}
+.value { font-size: 1.08rem; }
+.value p { margin: 0 0 0.85rem; }
+.value p:last-child { margin-bottom: 0; }
+.value a { color: var(--accent); }
+.empty, .cap-notice { color: var(--muted); font-style: italic; }
+body.dragging { outline: 3px dashed var(--accent); outline-offset: -10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="site">
+    <h1>Sheet Reader</h1>
+    <p class="hint">
+      In your sheet select the cells and copy them, then paste below.
+      You can also drag a downloaded CSV onto this page, or paste a link
+      to a sheet that is already public.
+    </p>
+    <textarea id="input" aria-label="Paste spreadsheet cells or a sheet link"
+      placeholder="Paste cells here"></textarea>
+    <div class="controls">
+      <button id="load" class="primary" type="button">Read</button>
+      <label for="header-row" class="hint" style="margin:0">Header row</label>
+      <select id="header-row" aria-label="Which row holds the headers"></select>
+      <input id="filter" type="search" placeholder="Filter responses" aria-label="Filter responses">
+      <button id="clear" type="button">Clear data</button>
+    </div>
+    <p id="status" role="status"></p>
+    <p id="count"></p>
+  </header>
+  <main id="cards" class="reading"></main>
+</div>
+<script>
+// ---- src/delimited.js ----
+function parseDelimited(text, delimiter) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  let i = 0;
+
+  while (i < text.length) {
+    const ch = text[i];
+
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i += 2;
+          continue;
+        }
+        inQuotes = false;
+        i += 1;
+        continue;
+      }
+      field += ch;
+      i += 1;
+      continue;
+    }
+
+    if (ch === '"' && field === '') {
+      inQuotes = true;
+      i += 1;
+      continue;
+    }
+
+    if (ch === delimiter) {
+      row.push(field);
+      field = '';
+      i += 1;
+      continue;
+    }
+
+    if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i += 1;
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = '';
+      i += 1;
+      continue;
+    }
+
+    field += ch;
+    i += 1;
+  }
+
+  if (field !== '' || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+
+  return rows;
+}
+
+function detectDelimiter(text) {
+  let inQuotes = false;
+  let tabs = 0;
+  let commas = 0;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+
+    if (ch === '"') {
+      if (inQuotes && text[i + 1] === '"') {
+        i += 1;
+        continue;
+      }
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (inQuotes) continue;
+    if (ch === '\n' || ch === '\r') break;
+    if (ch === '\t') tabs += 1;
+    else if (ch === ',') commas += 1;
+  }
+
+  return tabs > 0 && tabs >= commas ? '\t' : ',';
+}
+
+// ---- src/sheetUrl.js ----
+class InvalidSheetUrl extends Error {}
+
+const ID_IN_URL = /\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/;
+const BARE_ID = /^[a-zA-Z0-9-_]{20,}$/;
+const GID = /[#?&]gid=([0-9]+)/;
+const WHOLE_URL = /^https?:\/\/docs\.google\.com\/spreadsheets\/d\/[a-zA-Z0-9-_]+\S*$/;
+
+function parseSheetUrl(input) {
+  const text = String(input ?? '').trim();
+
+  let id;
+  const match = text.match(ID_IN_URL);
+  if (match) {
+    id = match[1];
+  } else if (BARE_ID.test(text)) {
+    id = text;
+  } else {
+    throw new InvalidSheetUrl('That does not look like a Google Sheets link.');
+  }
+
+  const gidMatch = text.match(GID);
+  return { id, gid: gidMatch ? gidMatch[1] : '0' };
+}
+
+function isSheetUrl(text) {
+  return WHOLE_URL.test(String(text ?? '').trim());
+}
+
+function csvUrl(id, gid) {
+  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&gid=${gid}`;
+}
+
+// ---- src/records.js ----
+function columnLetter(index) {
+  let n = index;
+  let out = '';
+  do {
+    out = String.fromCharCode(65 + (n % 26)) + out;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return out;
+}
+
+function buildLabels(header, width) {
+  const raw = [];
+  for (let i = 0; i < width; i += 1) {
+    raw.push((header[i] ?? '').trim());
+  }
+
+  const counts = new Map();
+  raw.forEach((label) => {
+    if (label) counts.set(label, (counts.get(label) ?? 0) + 1);
+  });
+
+  return raw.map((label, i) => {
+    if (!label) return `Column ${columnLetter(i)}`;
+    if (counts.get(label) > 1) return `${label} (${columnLetter(i)})`;
+    return label;
+  });
+}
+
+function toRecords(rows, headerRowIndex = 0) {
+  if (!rows || rows.length <= headerRowIndex + 1) return [];
+
+  const header = rows[headerRowIndex] ?? [];
+  const dataRows = rows.slice(headerRowIndex + 1);
+
+  let width = header.length;
+  dataRows.forEach((row) => {
+    if (row.length > width) width = row.length;
+  });
+
+  const labels = buildLabels(header, width);
+  const records = [];
+
+  dataRows.forEach((row) => {
+    const fields = [];
+    for (let i = 0; i < width; i += 1) {
+      const value = (row[i] ?? '').trim();
+      if (value) fields.push({ label: labels[i], value });
+    }
+    if (fields.length > 0) {
+      records.push({ index: records.length + 1, fields });
+    }
+  });
+
+  return records;
+}
+
+function filterRecords(records, query) {
+  const needle = String(query ?? '').trim().toLowerCase();
+  if (!needle) return records;
+
+  return records.filter((record) =>
+    record.fields.some(
+      (field) =>
+        field.label.toLowerCase().includes(needle) ||
+        field.value.toLowerCase().includes(needle),
+    ),
+  );
+}
+
+// ---- src/render.js ----
+const RENDER_CAP = 2000;
+
+const URL_PATTERN = /https?:\/\/[^\s<>"']+/g;
+const TRAILING_PUNCTUATION = /[.,;:!?)\]}]+$/;
+
+function linkify(text, doc = document) {
+  const fragment = doc.createDocumentFragment();
+  let cursor = 0;
+
+  for (const match of String(text).matchAll(URL_PATTERN)) {
+    let url = match[0];
+    const trailing = url.match(TRAILING_PUNCTUATION);
+    if (trailing) url = url.slice(0, url.length - trailing[0].length);
+
+    fragment.appendChild(doc.createTextNode(text.slice(cursor, match.index)));
+
+    const anchor = doc.createElement('a');
+    anchor.href = url;
+    anchor.textContent = url;
+    anchor.rel = 'noopener noreferrer';
+    anchor.target = '_blank';
+    fragment.appendChild(anchor);
+
+    cursor = match.index + url.length;
+  }
+
+  fragment.appendChild(doc.createTextNode(text.slice(cursor)));
+  return fragment;
+}
+
+function renderValue(value, doc) {
+  const wrapper = doc.createElement('div');
+  wrapper.className = 'value';
+
+  value.split('\n').forEach((line) => {
+    if (!line.trim()) return;
+    const paragraph = doc.createElement('p');
+    paragraph.setAttribute('dir', 'auto');
+    paragraph.appendChild(linkify(line, doc));
+    wrapper.appendChild(paragraph);
+  });
+
+  return wrapper;
+}
+
+function renderCard(record, total, doc) {
+  const card = doc.createElement('article');
+  card.className = 'card';
+
+  const position = doc.createElement('div');
+  position.className = 'card-index';
+  position.textContent = `Response ${record.index} of ${total}`;
+  card.appendChild(position);
+
+  record.fields.forEach((field) => {
+    const group = doc.createElement('div');
+    group.className = 'field';
+
+    const label = doc.createElement('div');
+    label.className = 'label';
+    label.textContent = field.label;
+    group.appendChild(label);
+
+    group.appendChild(renderValue(field.value, doc));
+    card.appendChild(group);
+  });
+
+  return card;
+}
+
+function renderCards(records, container, total, doc = document) {
+  container.textContent = '';
+
+  if (records.length === 0) {
+    const empty = doc.createElement('p');
+    empty.className = 'empty';
+    empty.textContent = 'Nothing to show.';
+    container.appendChild(empty);
+    return;
+  }
+
+  const shown = records.slice(0, RENDER_CAP);
+
+  if (records.length > RENDER_CAP) {
+    const notice = doc.createElement('p');
+    notice.className = 'cap-notice';
+    notice.textContent =
+      `Showing the first ${RENDER_CAP} of ${records.length} responses.`;
+    container.appendChild(notice);
+  }
+
+  const batch = doc.createDocumentFragment();
+  shown.forEach((record) => batch.appendChild(renderCard(record, total, doc)));
+  container.appendChild(batch);
+}
+
+// ---- src/main.js ----
+function start() {
+  // Task 6 fills this in.
+}
+
+if (typeof document !== 'undefined') {
+  start();
+}
+</script>
+</body>
+</html>
