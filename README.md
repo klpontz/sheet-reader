@@ -30,10 +30,10 @@ already exposed.
 
 ## What it handles
 
-Real spreadsheet exports are messy. Sheet Reader deals with commas
-and line breaks inside quoted cells, blank column headers, duplicate column
-names, right-to-left text, and long unbroken strings like message IDs. Use
-the filter box to narrow to matching records.
+Real spreadsheet exports are messy. Sheet Reader deals with commas and line
+breaks inside quoted cells, blank column headers, duplicate column names,
+right-to-left text, and long unbroken strings like message IDs. Use the filter
+box to narrow to matching records.
 
 ## Develop
 
