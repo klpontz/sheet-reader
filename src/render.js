@@ -156,6 +156,13 @@ function renderCard(record, total, doc) {
   return card;
 }
 
+// With no filter, repeating the total ("24 of 24") reads as an error.
+export function countLabel(shown, total, query) {
+  if (total === 0) return '';
+  if (!query.trim()) return total === 1 ? '1 response' : `${total} responses`;
+  return `${shown} of ${total} match`;
+}
+
 export function renderCards(records, container, total, doc = document) {
   container.textContent = '';
 

@@ -2,7 +2,7 @@
 import { parseDelimited, detectDelimiter } from './delimited.js';
 import { parseSheetUrl, isSheetUrl, csvUrl, InvalidSheetUrl } from './sheetUrl.js';
 import { toRecords, filterRecords } from './records.js';
-import { renderCards } from './render.js';
+import { renderCards, countLabel } from './render.js';
 /*__END_IMPORTS__*/
 
 const STATE = {
@@ -64,9 +64,7 @@ function draw() {
   const query = el('filter').value;
   const visible = filterRecords(STATE.records, query);
   renderCards(visible, el('cards'), STATE.records.length);
-  el('count').textContent = STATE.records.length
-    ? `${visible.length} of ${STATE.records.length} responses`
-    : '';
+  el('count').textContent = countLabel(visible.length, STATE.records.length, query);
 }
 
 function adopt(rows) {

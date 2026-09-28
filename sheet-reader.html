@@ -582,6 +582,13 @@ function renderCard(record, total, doc) {
   return card;
 }
 
+// With no filter, repeating the total ("24 of 24") reads as an error.
+function countLabel(shown, total, query) {
+  if (total === 0) return '';
+  if (!query.trim()) return total === 1 ? '1 response' : `${total} responses`;
+  return `${shown} of ${total} match`;
+}
+
 function renderCards(records, container, total, doc = document) {
   container.textContent = '';
 
@@ -670,9 +677,7 @@ function draw() {
   const query = el('filter').value;
   const visible = filterRecords(STATE.records, query);
   renderCards(visible, el('cards'), STATE.records.length);
-  el('count').textContent = STATE.records.length
-    ? `${visible.length} of ${STATE.records.length} responses`
-    : '';
+  el('count').textContent = countLabel(visible.length, STATE.records.length, query);
 }
 
 function adopt(rows) {

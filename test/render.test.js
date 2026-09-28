@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { linkify, renderCards, RENDER_CAP } from '../src/render.js';
+import { linkify, renderCards, countLabel, RENDER_CAP } from '../src/render.js';
 
 function textOf(node) {
   return node.textContent;
@@ -345,5 +345,25 @@ describe('collapsing tall fields', () => {
     renderCards([{ index: 1, fields: [{ label: 'A', value: 'Hello,\n\nThanks' }] }], container, 1);
     expect(container.querySelector('.collapsed')).toBeNull();
     expect(container.querySelector('button.more')).toBeNull();
+  });
+});
+
+describe('countLabel', () => {
+  it('shows only the total when no filter is active', () => {
+    expect(countLabel(24, 24, '')).toBe('24 responses');
+    expect(countLabel(24, 24, '   ')).toBe('24 responses');
+  });
+
+  it('uses the singular for one response', () => {
+    expect(countLabel(1, 1, '')).toBe('1 response');
+  });
+
+  it('shows matches against the total while filtering', () => {
+    expect(countLabel(3, 24, 'ymca')).toBe('3 of 24 match');
+    expect(countLabel(24, 24, 'e')).toBe('24 of 24 match');
+  });
+
+  it('is empty when nothing is loaded', () => {
+    expect(countLabel(0, 0, '')).toBe('');
   });
 });
