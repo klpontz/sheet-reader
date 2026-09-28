@@ -156,11 +156,11 @@ function renderCard(record, total, doc) {
   return card;
 }
 
-// With no filter, repeating the total ("24 of 24") reads as an error.
+// Each card already shows its position against the total, so the count
+// only earns a place while a filter hides some of them.
 export function countLabel(shown, total, query) {
-  if (total === 0) return '';
-  if (!query.trim()) return total === 1 ? '1 response' : `${total} responses`;
-  return `${shown} of ${total} match`;
+  if (total === 0 || !query.trim()) return '';
+  return `${shown} of ${total}`;
 }
 
 export function renderCards(records, container, total, doc = document) {

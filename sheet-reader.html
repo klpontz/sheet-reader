@@ -115,15 +115,24 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 input[type="search"] { flex: 1 1 12rem; }
 
 .hint.privacy { font-size: 0.8rem; margin: 0.6rem 0 0; }
-#status { margin: 1rem 0 0; color: var(--muted); font-size: 0.95rem; min-height: 1.4em; }
+#status { margin: 1rem 0 0; color: var(--muted); font-size: 0.95rem; }
+/* Stays in the tree so the live region still announces, but takes no room. */
+#status:empty { margin: 0; }
 #status.error { color: var(--danger); }
+/* The match count sits inside the filter box, like a find bar. */
+.filter-box { position: relative; flex: 1 1 12rem; display: flex; min-width: 0; }
+.filter-box input[type="search"] { flex: 1; width: 0; min-width: 0; padding-right: 5.5rem; }
 #count {
+  position: absolute;
+  right: 0.8rem;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
   font-family: var(--mono);
-  color: var(--muted);
   font-size: 11px;
   font-weight: 500;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
 }
 
 .reading { padding-top: 1.5rem; }
@@ -218,7 +227,10 @@ body.dragging { outline: 3px dashed var(--accent); outline-offset: -10px; }
       <button id="load" class="primary" type="button">Read</button>
       <label for="header-row" class="hint" style="margin:0">Header row</label>
       <select id="header-row" aria-label="Which row holds the headers"></select>
-      <input id="filter" type="search" placeholder="Filter responses" aria-label="Filter responses">
+      <div class="filter-box">
+        <input id="filter" type="search" placeholder="Filter responses" aria-label="Filter responses">
+        <span id="count" aria-live="polite"></span>
+      </div>
       <button id="clear" type="button">Clear data</button>
     </div>
     <p class="hint privacy">
@@ -226,7 +238,6 @@ body.dragging { outline: 3px dashed var(--accent); outline-offset: -10px; }
       Use Clear data to remove it.
     </p>
     <p id="status" role="status"></p>
-    <p id="count"></p>
   </header>
   <main id="cards" class="reading"></main>
 </div>
@@ -582,11 +593,11 @@ function renderCard(record, total, doc) {
   return card;
 }
 
-// With no filter, repeating the total ("24 of 24") reads as an error.
+// Each card already shows its position against the total, so the count
+// only earns a place while a filter hides some of them.
 function countLabel(shown, total, query) {
-  if (total === 0) return '';
-  if (!query.trim()) return total === 1 ? '1 response' : `${total} responses`;
-  return `${shown} of ${total} match`;
+  if (total === 0 || !query.trim()) return '';
+  return `${shown} of ${total}`;
 }
 
 function renderCards(records, container, total, doc = document) {
