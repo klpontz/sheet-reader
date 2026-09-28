@@ -17,19 +17,19 @@ describe('linkify', () => {
     const links = frag.querySelectorAll('a');
     expect(links).toHaveLength(1);
     expect(links[0].getAttribute('href')).toBe('https://example.com');
-    expect(links[0].textContent).toBe('https://example.com');
+    expect(links[0].textContent).toBe('example.com');
   });
 
   it('links a URL inside a sentence and keeps the surrounding text', () => {
     const frag = linkify('see https://example.com now');
     expect(frag.querySelectorAll('a')).toHaveLength(1);
-    expect(textOf(frag)).toBe('see https://example.com now');
+    expect(textOf(frag)).toBe('see example.com now');
   });
 
   it('excludes trailing sentence punctuation from the link', () => {
     const frag = linkify('go to https://example.com.');
     expect(frag.querySelector('a').getAttribute('href')).toBe('https://example.com');
-    expect(textOf(frag)).toBe('go to https://example.com.');
+    expect(textOf(frag)).toBe('go to example.com.');
   });
 
   it('links more than one URL', () => {
@@ -242,5 +242,108 @@ describe('compact grouping of short fields', () => {
     const token = 'a'.repeat(120);
     renderCards([{ index: 1, fields: [short('ID', token)] }], container, 1);
     expect(container.querySelector('.value').textContent).toBe(token);
+  });
+});
+
+describe('paragraphs and line breaks', () => {
+  let container;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+  });
+
+  const render = (value) =>
+    renderCards([{ index: 1, fields: [{ label: 'A', value }] }], container, 1);
+
+  it('keeps single newlines inside one paragraph as line breaks', () => {
+    render('as she will be\nable to answer that');
+    const paragraphs = container.querySelectorAll('.value p');
+    expect(paragraphs).toHaveLength(1);
+    expect(paragraphs[0].querySelectorAll('br')).toHaveLength(1);
+  });
+
+  it('starts a new paragraph at a blank line', () => {
+    render('Hi Eileen,\n\nThanks for reaching out!\nMore\n\nBest');
+    expect(container.querySelectorAll('.value p')).toHaveLength(3);
+  });
+
+  it('treats whitespace-only lines as blank and handles CRLF', () => {
+    render('one\r\n  \r\ntwo\r\nthree');
+    const paragraphs = container.querySelectorAll('.value p');
+    expect(paragraphs).toHaveLength(2);
+    expect(paragraphs[1].querySelectorAll('br')).toHaveLength(1);
+  });
+
+  it('keeps links working across line breaks', () => {
+    render('first\nhttps://example.com');
+    expect(container.querySelectorAll('.value a')).toHaveLength(1);
+  });
+});
+
+describe('short link text', () => {
+  it('drops the scheme from a short URL', () => {
+    const link = linkify('https://example.com/a').querySelector('a');
+    expect(link.textContent).toBe('example.com/a');
+    expect(link.getAttribute('href')).toBe('https://example.com/a');
+  });
+
+  it('drops the query and shortens a long path in the middle', () => {
+    const url =
+      'https://docs.google.com/document/d/1Anz8bzvMk2Nium0z1vmi3G8bcSaGp7ux/edit?usp=drivesdk&ouid=1';
+    const link = linkify(url).querySelector('a');
+    expect(link.getAttribute('href')).toBe(url);
+    expect(link.getAttribute('title')).toBe(url);
+    expect(link.textContent.startsWith('docs.google.com/document/')).toBe(true);
+    expect(link.textContent.endsWith('/edit')).toBe(true);
+    expect(link.textContent).toContain('…');
+    expect(link.textContent.length).toBeLessThanOrEqual(48);
+  });
+
+  it('keeps the full text of the value outside the link', () => {
+    const frag = linkify('see https://example.com now');
+    expect(frag.textContent).toBe('see example.com now');
+  });
+});
+
+describe('collapsing tall fields', () => {
+  let container;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+  });
+
+  const tall = Array.from({ length: 30 }, (_, i) => `line ${i}`).join('\n');
+
+  it('collapses a tall field and offers a Show more button', () => {
+    renderCards([{ index: 1, fields: [{ label: 'Thread', value: tall }] }], container, 1);
+    const field = container.querySelector('.field');
+    expect(field.classList.contains('collapsed')).toBe(true);
+    const button = field.querySelector('button.more');
+    expect(button.textContent).toBe('Show more');
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('expands and collapses again on click', () => {
+    renderCards([{ index: 1, fields: [{ label: 'Thread', value: tall }] }], container, 1);
+    const field = container.querySelector('.field');
+    const button = field.querySelector('button.more');
+    button.click();
+    expect(field.classList.contains('collapsed')).toBe(false);
+    expect(button.textContent).toBe('Show less');
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    button.click();
+    expect(field.classList.contains('collapsed')).toBe(true);
+  });
+
+  it('treats one very long line as tall', () => {
+    const wall = 'word '.repeat(400);
+    renderCards([{ index: 1, fields: [{ label: 'A', value: wall }] }], container, 1);
+    expect(container.querySelector('.field.collapsed')).not.toBeNull();
+  });
+
+  it('leaves a short field alone', () => {
+    renderCards([{ index: 1, fields: [{ label: 'A', value: 'Hello,\n\nThanks' }] }], container, 1);
+    expect(container.querySelector('.collapsed')).toBeNull();
+    expect(container.querySelector('button.more')).toBeNull();
   });
 });

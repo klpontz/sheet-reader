@@ -1,8 +1,24 @@
 export const RENDER_CAP = 2000;
 export const SHORT_VALUE_LIMIT = 32;
+export const LINK_TEXT_LIMIT = 48;
+export const TALL_FIELD_LINES = 14;
+
+// Rough characters per rendered line at the reading width. Used only to
+// guess height, since a DOM that has not painted cannot be measured.
+const CHARS_PER_LINE = 70;
 
 const URL_PATTERN = /https?:\/\/[^\s<>"']+/g;
 const TRAILING_PUNCTUATION = /[.,;:!?)\]}]+$/;
+
+// The href keeps the whole URL. The visible text drops the scheme and the
+// query, then cuts the middle, so a document link stops filling three lines.
+export function shortLinkText(url) {
+  const text = url.replace(/^https?:\/\//, '').replace(/[?#].*$/, '');
+  if (text.length <= LINK_TEXT_LIMIT) return text;
+  const tail = text.slice(text.lastIndexOf('/', text.length - 2)).slice(-12);
+  const head = text.slice(0, LINK_TEXT_LIMIT - tail.length - 1);
+  return `${head}…${tail}`;
+}
 
 export function linkify(text, doc = document) {
   const fragment = doc.createDocumentFragment();
@@ -17,7 +33,8 @@ export function linkify(text, doc = document) {
 
     const anchor = doc.createElement('a');
     anchor.href = url;
-    anchor.textContent = url;
+    anchor.title = url;
+    anchor.textContent = shortLinkText(url);
     anchor.rel = 'noopener noreferrer';
     anchor.target = '_blank';
     fragment.appendChild(anchor);
@@ -29,19 +46,53 @@ export function linkify(text, doc = document) {
   return fragment;
 }
 
+// A blank line starts a paragraph. A single newline is a line break inside
+// one, which is how hard-wrapped email text arrives.
+function paragraphsOf(value) {
+  return value
+    .split(/\r?\n[ \t]*\r?\n\s*/)
+    .map((block) => block.split(/\r?\n/).filter((line) => line.trim()))
+    .filter((lines) => lines.length > 0);
+}
+
 function renderValue(value, doc) {
   const wrapper = doc.createElement('div');
   wrapper.className = 'value';
 
-  value.split('\n').forEach((line) => {
-    if (!line.trim()) return;
+  paragraphsOf(value).forEach((lines) => {
     const paragraph = doc.createElement('p');
     paragraph.setAttribute('dir', 'auto');
-    paragraph.appendChild(linkify(line, doc));
+    lines.forEach((line, i) => {
+      if (i > 0) paragraph.appendChild(doc.createElement('br'));
+      paragraph.appendChild(linkify(line, doc));
+    });
     wrapper.appendChild(paragraph);
   });
 
   return wrapper;
+}
+
+function isTall(value) {
+  const lines = value
+    .split(/\r?\n/)
+    .reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / CHARS_PER_LINE)), 0);
+  return lines > TALL_FIELD_LINES;
+}
+
+function addToggle(group, doc) {
+  group.classList.add('collapsed');
+
+  const button = doc.createElement('button');
+  button.type = 'button';
+  button.className = 'more';
+  button.textContent = 'Show more';
+  button.setAttribute('aria-expanded', 'false');
+  button.addEventListener('click', () => {
+    const collapsed = group.classList.toggle('collapsed');
+    button.textContent = collapsed ? 'Show more' : 'Show less';
+    button.setAttribute('aria-expanded', String(!collapsed));
+  });
+  group.appendChild(button);
 }
 
 function renderField(field, doc) {
@@ -54,6 +105,7 @@ function renderField(field, doc) {
   group.appendChild(label);
 
   group.appendChild(renderValue(field.value, doc));
+  if (isTall(field.value)) addToggle(group, doc);
   return group;
 }
 

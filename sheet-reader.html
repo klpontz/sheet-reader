@@ -114,6 +114,7 @@ button { cursor: pointer; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 input[type="search"] { flex: 1 1 12rem; }
 
+.hint.privacy { font-size: 0.8rem; margin: 0.6rem 0 0; }
 #status { margin: 1rem 0 0; color: var(--muted); font-size: 0.95rem; min-height: 1.4em; }
 #status.error { color: var(--danger); }
 #count {
@@ -145,28 +146,38 @@ input[type="search"] { flex: 1 1 12rem; }
   border-bottom: 1px solid var(--rule);
   border-radius: 10px 10px 0 0;
 }
-.field { margin-bottom: 1.25rem; min-width: 0; }
-.field:last-child { margin-bottom: 0; }
+.field { min-width: 0; }
+/* Each top-level section gets a rule and more space above its label than
+   below it, so a label reads as the start of a new column, not as one
+   more line of the value before it. */
+.card > .field,
+.card > .compact {
+  border-top: 1px solid var(--rule);
+  padding-top: 1.35rem;
+  margin-top: 1.6rem;
+}
+.card > .card-index + .field,
+.card > .card-index + .compact {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 0;
+}
 .compact {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
-  gap: 0 1.5rem;
-  margin-bottom: 1.25rem;
-  padding-bottom: 1.25rem;
-  border-bottom: 1px solid var(--rule);
+  gap: 1rem 1.5rem;
 }
-.compact:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
-.compact .field { margin-bottom: 1.25rem; }
 .label {
   font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.13em;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: 0.35rem;
+  color: var(--accent);
+  margin-bottom: 0.5rem;
   overflow-wrap: anywhere;
 }
+.compact .label { color: var(--muted); font-weight: 500; margin-bottom: 0.2rem; }
 .value {
   font-size: 1.05rem;
   overflow-wrap: anywhere;
@@ -175,6 +186,19 @@ input[type="search"] { flex: 1 1 12rem; }
 .value p { margin: 0 0 0.85rem; }
 .value p:last-child { margin-bottom: 0; }
 .value a { color: var(--accent); text-underline-offset: 2px; }
+/* Tall fields start clipped with a fade into the card, and open in place. */
+.field.collapsed .value {
+  max-height: 15rem;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent);
+  mask-image: linear-gradient(to bottom, #000 70%, transparent);
+}
+button.more {
+  margin-top: 0.6rem;
+  padding: 0.25rem 0.7rem;
+  font-size: 0.85rem;
+  color: var(--accent);
+}
 .empty, .cap-notice { color: var(--muted); font-style: italic; }
 body.dragging { outline: 3px dashed var(--accent); outline-offset: -10px; }
 </style>
@@ -197,12 +221,12 @@ body.dragging { outline: 3px dashed var(--accent); outline-offset: -10px; }
       <input id="filter" type="search" placeholder="Filter responses" aria-label="Filter responses">
       <button id="clear" type="button">Clear data</button>
     </div>
-    <p id="status" role="status"></p>
-    <p id="count"></p>
-    <p class="hint" style="font-size:0.8rem">
+    <p class="hint privacy">
       Your data stays in this browser on this machine. Nothing is uploaded.
       Use Clear data to remove it.
     </p>
+    <p id="status" role="status"></p>
+    <p id="count"></p>
   </header>
   <main id="cards" class="reading"></main>
 </div>
@@ -402,9 +426,25 @@ function filterRecords(records, query) {
 // ---- src/render.js ----
 const RENDER_CAP = 2000;
 const SHORT_VALUE_LIMIT = 32;
+const LINK_TEXT_LIMIT = 48;
+const TALL_FIELD_LINES = 14;
+
+// Rough characters per rendered line at the reading width. Used only to
+// guess height, since a DOM that has not painted cannot be measured.
+const CHARS_PER_LINE = 70;
 
 const URL_PATTERN = /https?:\/\/[^\s<>"']+/g;
 const TRAILING_PUNCTUATION = /[.,;:!?)\]}]+$/;
+
+// The href keeps the whole URL. The visible text drops the scheme and the
+// query, then cuts the middle, so a document link stops filling three lines.
+function shortLinkText(url) {
+  const text = url.replace(/^https?:\/\//, '').replace(/[?#].*$/, '');
+  if (text.length <= LINK_TEXT_LIMIT) return text;
+  const tail = text.slice(text.lastIndexOf('/', text.length - 2)).slice(-12);
+  const head = text.slice(0, LINK_TEXT_LIMIT - tail.length - 1);
+  return `${head}…${tail}`;
+}
 
 function linkify(text, doc = document) {
   const fragment = doc.createDocumentFragment();
@@ -419,7 +459,8 @@ function linkify(text, doc = document) {
 
     const anchor = doc.createElement('a');
     anchor.href = url;
-    anchor.textContent = url;
+    anchor.title = url;
+    anchor.textContent = shortLinkText(url);
     anchor.rel = 'noopener noreferrer';
     anchor.target = '_blank';
     fragment.appendChild(anchor);
@@ -431,19 +472,53 @@ function linkify(text, doc = document) {
   return fragment;
 }
 
+// A blank line starts a paragraph. A single newline is a line break inside
+// one, which is how hard-wrapped email text arrives.
+function paragraphsOf(value) {
+  return value
+    .split(/\r?\n[ \t]*\r?\n\s*/)
+    .map((block) => block.split(/\r?\n/).filter((line) => line.trim()))
+    .filter((lines) => lines.length > 0);
+}
+
 function renderValue(value, doc) {
   const wrapper = doc.createElement('div');
   wrapper.className = 'value';
 
-  value.split('\n').forEach((line) => {
-    if (!line.trim()) return;
+  paragraphsOf(value).forEach((lines) => {
     const paragraph = doc.createElement('p');
     paragraph.setAttribute('dir', 'auto');
-    paragraph.appendChild(linkify(line, doc));
+    lines.forEach((line, i) => {
+      if (i > 0) paragraph.appendChild(doc.createElement('br'));
+      paragraph.appendChild(linkify(line, doc));
+    });
     wrapper.appendChild(paragraph);
   });
 
   return wrapper;
+}
+
+function isTall(value) {
+  const lines = value
+    .split(/\r?\n/)
+    .reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / CHARS_PER_LINE)), 0);
+  return lines > TALL_FIELD_LINES;
+}
+
+function addToggle(group, doc) {
+  group.classList.add('collapsed');
+
+  const button = doc.createElement('button');
+  button.type = 'button';
+  button.className = 'more';
+  button.textContent = 'Show more';
+  button.setAttribute('aria-expanded', 'false');
+  button.addEventListener('click', () => {
+    const collapsed = group.classList.toggle('collapsed');
+    button.textContent = collapsed ? 'Show more' : 'Show less';
+    button.setAttribute('aria-expanded', String(!collapsed));
+  });
+  group.appendChild(button);
 }
 
 function renderField(field, doc) {
@@ -456,6 +531,7 @@ function renderField(field, doc) {
   group.appendChild(label);
 
   group.appendChild(renderValue(field.value, doc));
+  if (isTall(field.value)) addToggle(group, doc);
   return group;
 }
 
