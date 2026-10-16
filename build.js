@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 
 const MODULES = [
@@ -45,23 +46,57 @@ export function validateBundle(bundle) {
   }
 }
 
+const OUTPUTS = ['sheeet-reader.html', 'index.html'];
+
+function sha256(text) {
+  return `'sha256-${createHash('sha256').update(text, 'utf8').digest('base64')}'`;
+}
+
+function only(html, pattern, name) {
+  const matches = [...html.matchAll(pattern)];
+  if (matches.length !== 1) {
+    throw new Error(`Expected exactly one ${name} block, found ${matches.length}.`);
+  }
+  return matches[0][1];
+}
+
+// The Content-Security-Policy allows only the exact inline script and style
+// that this build writes. Hash them last, after every other substitution.
+export function stampPolicy(html) {
+  const script = only(html, /<script>([\s\S]*?)<\/script>/g, '<script>');
+  const style = only(html, /<style>([\s\S]*?)<\/style>/g, '<style>');
+
+  return html
+    .replace('__SCRIPT_HASH__', sha256(script))
+    .replace('__STYLE_HASH__', sha256(style));
+}
+
 function main() {
   const bundle = buildBundle();
   validateBundle(bundle);
 
   const template = readFileSync('src/template.html', 'utf8');
 
-  if (!template.includes('/*__BUNDLE__*/')) {
-    throw new Error('src/template.html is missing the /*__BUNDLE__*/ placeholder.');
+  for (const marker of ['/*__BUNDLE__*/', '<!--__LOGO__-->', '__FAVICON__', '__SCRIPT_HASH__', '__STYLE_HASH__']) {
+    if (!template.includes(marker)) {
+      throw new Error(`src/template.html is missing the ${marker} placeholder.`);
+    }
   }
 
-  writeFileSync(
-    'sheet-reader.html',
-    template.replace('/*__BUNDLE__*/', bundle),
-    'utf8',
+  const logo = readFileSync('src/logo.svg', 'utf8').trim();
+  const favicon = `data:image/svg+xml,${encodeURIComponent(logo)}`;
+  const inlineLogo = logo.replace('<svg ', '<svg class="logo" aria-hidden="true" ');
+
+  const html = stampPolicy(
+    template
+      .replace('__FAVICON__', favicon)
+      .replace('<!--__LOGO__-->', inlineLogo)
+      .replace('/*__BUNDLE__*/', () => bundle),
   );
 
-  console.log(`Built sheet-reader.html from ${MODULES.length} modules.`);
+  for (const path of OUTPUTS) writeFileSync(path, html, 'utf8');
+
+  console.log(`Built ${OUTPUTS.join(' and ')} from ${MODULES.length} modules.`);
 }
 
 const isMain = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
