@@ -65,6 +65,12 @@ describe('build', () => {
     expect(html).toMatch(/<link rel="icon" href="data:image\/svg\+xml,[^"]+">/);
   });
 
+  it('uses the app-tile icon as the favicon and the cell stack as the logo', () => {
+    const favicon = decodeURIComponent(html.match(/<link rel="icon" href="data:image\/svg\+xml,([^"]+)">/)[1]);
+    expect(favicon).toBe(readFileSync('src/favicon.svg', 'utf8').trim());
+    expect(html).toContain(readFileSync('src/logo.svg', 'utf8').trim().replace('<svg ', '<svg class="logo" aria-hidden="true" '));
+  });
+
   it('sends no referrer', () => {
     expect(html).toContain('<meta name="referrer" content="no-referrer">');
   });

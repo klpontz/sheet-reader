@@ -84,7 +84,8 @@ function main() {
   }
 
   const logo = readFileSync('src/logo.svg', 'utf8').trim();
-  const favicon = `data:image/svg+xml,${encodeURIComponent(logo)}`;
+  const faviconSvg = readFileSync('src/favicon.svg', 'utf8').trim();
+  const favicon = `data:image/svg+xml,${encodeURIComponent(faviconSvg)}`;
   const inlineLogo = logo.replace('<svg ', '<svg class="logo" aria-hidden="true" ');
 
   const html = stampPolicy(
