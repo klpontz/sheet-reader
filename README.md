@@ -52,10 +52,18 @@ npm run build     # regenerates sheeet-reader.html and index.html from src/
 Logic lives in `src/` as ES modules so it can be unit tested. `build.js`
 inlines those modules into `src/template.html` to produce the single
 `sheeet-reader.html`, which is the file people download. It writes the same
-page to `index.html`, which GitHub Pages serves at sheeetreader.com. Both are
+page to `index.html`, which is the page served at sheeetreader.com. Both are
 committed, so rebuild and commit them whenever `src/` changes. The build hashes
 the final script and style into the Content-Security-Policy, so never edit the
 built files by hand: the browser will refuse to run them.
+
+## Deploy
+
+The site runs on Bluehost. `deploy/deploy.sh` rebuilds, runs the tests, and
+uploads `index.html` and `deploy/.htaccess` over SSH. It reads the SSH user,
+host, and document root from `deploy/deploy.env`, which is not committed.
+The `.htaccess` file forces HTTPS, serves only the page, and adds the headers
+that a meta tag cannot set, such as the one that blocks framing.
 
 ## License
 

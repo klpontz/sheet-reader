@@ -2,3 +2,4 @@ config.local.js
 node_modules/
 .superpowers/
 docs/superpowers/
+deploy/deploy.env
