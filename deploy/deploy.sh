@@ -17,7 +17,13 @@ if ! git diff --quiet -- index.html sheeet-reader.html; then
   exit 1
 fi
 
-scp -i "$KEY" index.html deploy/.htaccess "$TARGET:$BLUEHOST_DOCROOT/"
-ssh -i "$KEY" "$TARGET" "chmod 644 '$BLUEHOST_DOCROOT/index.html' '$BLUEHOST_DOCROOT/.htaccess'"
+# Bluehost turns off shell access, so use SFTP only.
+sftp -o BatchMode=yes -i "$KEY" -b - "$TARGET" <<SFTP
+cd $BLUEHOST_DOCROOT
+put index.html
+put deploy/.htaccess .htaccess
+chmod 644 index.html
+chmod 644 .htaccess
+SFTP
 
 echo "Deployed $(git rev-parse --short HEAD) to $BLUEHOST_DOCROOT."
